@@ -2,18 +2,18 @@ version: "3.8"
 
 services:
   postgres:
-    image: postgres:13
+    image: ${POSTGRES_IMAGE}
     container_name: axelor-postgres
     environment:
-      POSTGRES_USER: axelor
-      POSTGRES_PASSWORD: axelor
-      POSTGRES_DB: axelor
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U axelor"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -22,36 +22,46 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        GRADLE_VERSION: ${GRADLE_VERSION}
+        AXELOR_REPO: ${AXELOR_REPO}
+        AXELOR_VERSION: ${AXELOR_VERSION}
+        AXELOR_DB_URL: ${AXELOR_DB_URL}
+        AXELOR_DB_USER: ${AXELOR_DB_USER}
+        AXELOR_DB_PASSWORD: ${AXELOR_DB_PASSWORD}
     container_name: axelor-app
     environment:
-      JAVA_OPTS: -Xms512m -Xmx1024m
-      DB_URL: jdbc:postgresql://postgres:5432/axelor
-      DB_USER: axelor
-      DB_PASSWORD: axelor
+      JAVA_OPTS: ${JAVA_OPTS}
+      DB_URL: ${AXELOR_DB_URL}
+      DB_USER: ${AXELOR_DB_USER}
+      DB_PASSWORD: ${AXELOR_DB_PASSWORD}
     ports:
-      - "7070:7070"
+      - "${AXELOR_PORT}:7070"
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
     volumes:
-      - ./data/uploads:/usr/local/tomcat/data/uploads
-      - ./data/export:/usr/local/tomcat/data/export
-      - ./data/indexes:/usr/local/tomcat/data/indexes
+      - ${UPLOAD_DIR}:/usr/local/tomcat/data/uploads
+      - ${EXPORT_DIR}:/usr/local/tomcat/data/export
+      - ${INDEXES_DIR}:/usr/local/tomcat/data/indexes
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:7070"]
       interval: 30s
-      timeout: 5s
-      retries: 3
+      timeout: 10s
+      retries: 5
+      start_period: 120s
 
   pgadmin:
-    image: dpage/pgadmin4:latest
+    image: ${PGADMIN_IMAGE}
     container_name: axelor-pgadmin
     environment:
-      PGADMIN_DEFAULT_EMAIL: admin@admin.com
-      PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD}
     ports:
-      - "5050:80"
+      - "${PGADMIN_PORT}:80"
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
     volumes:
       - pgadmin_data:/var/lib/pgadmin
     restart: unless-stopped

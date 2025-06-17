@@ -4,9 +4,18 @@ FROM openjdk:11-jdk as builder
 # Install necessary tools for building the application
 RUN apt-get update && apt-get install -y git curl unzip sed
 
+# Accept build arguments
+ARG GRADLE_VERSION=7.6
+ARG AXELOR_REPO=https://github.com/axelor/open-suite-webapp.git
+ARG AXELOR_VERSION=8.0
+ARG AXELOR_DB_URL=jdbc:postgresql://postgres:5432/axelor
+ARG AXELOR_DB_USER=axelor
+ARG AXELOR_DB_PASSWORD=axelor
+
 # Set environment variables
-ENV GRADLE_VERSION=7.6
-ENV AXELOR_REPO=https://github.com/axelor/open-suite-webapp.git
+ENV GRADLE_VERSION=${GRADLE_VERSION}
+ENV AXELOR_REPO=${AXELOR_REPO}
+ENV AXELOR_VERSION=${AXELOR_VERSION}
 ENV APP_HOME=/opt/axelor
 
 # Install Gradle
@@ -15,24 +24,24 @@ RUN curl -L https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-b
     rm gradle.zip && \
     ln -s /opt/gradle-${GRADLE_VERSION}/bin/gradle /usr/bin/gradle
 
-# Clone Axelor source code for version 8.0
+# Clone Axelor source code for specified version
 RUN git clone ${AXELOR_REPO} ${APP_HOME} && \
     cd ${APP_HOME} && \
-    git checkout 8.0
+    git checkout ${AXELOR_VERSION}
 
 # Update the .gitmodules file with the correct URL
 RUN sed -i 's|git@github.com:axelor/axelor-open-suite.git|https://github.com/axelor/axelor-open-suite.git|g' ${APP_HOME}/.gitmodules && \
     cd ${APP_HOME} && \
     git submodule init && \
     git submodule update && \
-    git submodule foreach git checkout 8.0
+    git submodule foreach git checkout ${AXELOR_VERSION}
 
 # Ensure axelor-config.properties lines are replaced or appended
 RUN CONFIG_FILE=${APP_HOME}/src/main/resources/axelor-config.properties && \
     touch $CONFIG_FILE && \
-    sed -i '/^db.default.url/d' $CONFIG_FILE && echo "db.default.url=jdbc:postgresql://postgres:5432/axelor" >> $CONFIG_FILE && \
-    sed -i '/^db.default.user/d' $CONFIG_FILE && echo "db.default.user=axelor" >> $CONFIG_FILE && \
-    sed -i '/^db.default.password/d' $CONFIG_FILE && echo "db.default.password=axelor" >> $CONFIG_FILE && \
+    sed -i '/^db.default.url/d' $CONFIG_FILE && echo "db.default.url=${AXELOR_DB_URL}" >> $CONFIG_FILE && \
+    sed -i '/^db.default.user/d' $CONFIG_FILE && echo "db.default.user=${AXELOR_DB_USER}" >> $CONFIG_FILE && \
+    sed -i '/^db.default.password/d' $CONFIG_FILE && echo "db.default.password=${AXELOR_DB_PASSWORD}" >> $CONFIG_FILE && \
     # sed -i '/^db.default.schema/d' $CONFIG_FILE && echo "db.default.schema=public" >> $CONFIG_FILE && \
     sed -i '/^file.upload.dir/d' $CONFIG_FILE && echo "file.upload.dir=/usr/local/tomcat/data/uploads" >> $CONFIG_FILE && \
     sed -i '/^data.export.dir/d' $CONFIG_FILE && echo "data.export.dir=/usr/local/tomcat/data/export" >> $CONFIG_FILE && \
@@ -62,11 +71,18 @@ COPY --from=builder /opt/axelor/src/main/resources/axelor-config.properties /usr
 RUN mkdir -p /usr/local/tomcat/data/uploads /usr/local/tomcat/data/export /usr/local/tomcat/data/indexes && \
     chmod -R 777 /usr/local/tomcat/data
 
-# Change Tomcat's HTTP port to 7070
-RUN sed -i 's/port="8080"/port="7070"/g' /usr/local/tomcat/conf/server.xml
+# Create a startup script that handles dynamic port configuration for cloud hosting
+RUN echo '#!/bin/bash\n\
+# Use PORT environment variable if set (for Railway/cloud hosting), otherwise default to 7070\n\
+export TOMCAT_PORT=${PORT:-7070}\n\
+# Update server.xml with the correct port\n\
+sed -i "s/port=\"8080\"/port=\"$TOMCAT_PORT\"/g" /usr/local/tomcat/conf/server.xml\n\
+# Start Tomcat\n\
+exec catalina.sh run' > /usr/local/tomcat/bin/start-axelor.sh && \
+    chmod +x /usr/local/tomcat/bin/start-axelor.sh
 
-# Expose the updated port
+# Expose port (will be dynamic in cloud environments)
 EXPOSE 7070
 
-# Start Tomcat
-CMD ["catalina.sh", "run"]
+# Use the startup script that handles dynamic port configuration
+CMD ["/usr/local/tomcat/bin/start-axelor.sh"]
