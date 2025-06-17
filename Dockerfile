@@ -71,18 +71,21 @@ COPY --from=builder /opt/axelor/src/main/resources/axelor-config.properties /usr
 RUN mkdir -p /usr/local/tomcat/data/uploads /usr/local/tomcat/data/export /usr/local/tomcat/data/indexes && \
     chmod -R 777 /usr/local/tomcat/data
 
+# Accept port argument for cloud deployment compatibility
+ARG AXELOR_PORT=7070
+
 # Create a startup script that handles dynamic port configuration for cloud hosting
 RUN echo '#!/bin/bash\n\
-# Use PORT environment variable if set (for Railway/cloud hosting), otherwise default to 7070\n\
-export TOMCAT_PORT=${PORT:-7070}\n\
+# Use PORT environment variable if set (for Railway/cloud hosting), otherwise use build arg\n\
+export TOMCAT_PORT=${PORT:-'"${AXELOR_PORT}"'}\n\
 # Update server.xml with the correct port\n\
 sed -i "s/port=\"8080\"/port=\"$TOMCAT_PORT\"/g" /usr/local/tomcat/conf/server.xml\n\
 # Start Tomcat\n\
 exec catalina.sh run' > /usr/local/tomcat/bin/start-axelor.sh && \
     chmod +x /usr/local/tomcat/bin/start-axelor.sh
 
-# Expose port (will be dynamic in cloud environments)
-EXPOSE 7070
+# Expose port (configurable via build arg)
+EXPOSE ${AXELOR_PORT}
 
 # Use the startup script that handles dynamic port configuration
 CMD ["/usr/local/tomcat/bin/start-axelor.sh"]
